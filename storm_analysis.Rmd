@@ -1,0 +1,476 @@
+---
+title: "Project 1"
+author: "Celina Alnakib"
+date: "10/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introdcution
+
+In this report, an exploratory analysis of tropical storms in the North Atlantic from years 1970 to 2019 will be performed. Furthermore, there will be a focus on four main research aspects.
+
+## A) Prelimenary Setup: Data IBTrACS
+
+### A.1) Recommended R Packages
+
+```{r}
+library(tidyverse) # includes dplyr, ggplot2 and other pkgs
+library(lubridate) # for working with dates
+library(spData) # contains "world" data for maps
+library(gganimate) # for animated graphs (and maps)
+library("png")
+library("gifski")
+```
+
+
+### A.2) Importing Data in R
+
+```{r}
+col_names <- c("SID", "SEASON", "NUMBER", "BASIN", "SUBBASIN", "NAME", "ISO_TIME", "NATURE", "LAT", "LON", "WMO_WIND", "WMO_PRES", "WMO_AGENCY", "TRACK_TYPE", "DIST2LAND", "LANDFALL")
+
+column_types <- c('character', 'integer', 'integer', 'character', 'character', 'character', 'character', 'character', 'double', 'double', 'integer', 'integer', 'character', 'character', 'integer', 'integer')
+
+dat <- read.csv(
+  file="ibtracs.NA.list.v04r00.csv", 
+  colClasses = c(column_types, rep("NULL", 147)),
+  stringsAsFactors = FALSE, 
+  skip = 77876,
+  na.strings = c(" ", "MM"))
+
+colnames(dat) <- col_names
+```
+
+### A.3) Adding a MONTH column
+
+```{r}
+dat$ISO_TIME = as.POSIXct(dat$ISO_TIME)
+dat$MONTH <- lubridate::month(dat$ISO_TIME)
+str(dat, vec.len = 1)
+```
+
+
+# Univariate Exploratory Data Analysis
+
+Now that the data is set up, an Exploratory Data Analysis (EDA) can be conducted. We are going to be exploring 10 columns starting with SEASON and ending with DIST2LAND in order to have a more comprehensive understating of the data set before assessing our main claims. In this analysis the columns for Latitude and Longitude will be combined. 
+
+
+## 1.Season: SEASON
+
+The intent of this project is to analyze “tropical storms in the North Atlantic from years 1970 to 2019”, so we want to make sure that the number of years listed in our data set is 50 given that our range of interest is from 1970 to 2019.
+```{r}
+count(distinct(select(dat, SEASON)))
+```
+We find that there are 52 seasons rather than the 50 indicating that the original data set includes the years 2020 and 2021, which we are not interested in for this project. To remedy this, we will filter the data to only include the storms from our the given analysis period.
+```{r}
+storm_list <- filter(dat, SEASON >= '1970' & SEASON <= '2019')
+count(distinct(select(storm_list, SEASON)))
+```
+Now that the data is filtered per the correct SEASON, we can move on to analyzing BASIN.
+
+## 2.Basin: BASIN
+
+In this column, we want to look at which basin areas could potentially be included the data. So in order to better understand which of those given areas is most affected, we are going to collect the storm counts in each area. 
+
+```{r}
+basin_count <- distinct(group_by(storm_list, BASIN), SID)
+count(basin_count, BASIN, name = "Storm Count")
+```
+We find that the data file we’re working with is meant to consist of only of storms that were observed in the North Atlantic, but we have a few entries from the Eastern Pacific basin. This is because these storms turn out to be ones that started in the North Atlantic, crossed over Central America, and ended up in the Pacific. We can then create a bar graph to make the counts in each basin clear.
+
+```{r}
+ggplot(basin_count) + 
+  geom_bar(aes(x=BASIN), color="darkblue", fill="lightblue") + 
+  ggtitle("Storms in EP vs NA") 
+```
+
+## 3.Sub basin: SUBBASIN
+
+Like we did in our analysis of the BASIN data, let's first look at the data included in the SUBBASIN column and get the storm counts to asses which sub basins are most affected. 
+
+```{r}
+subbasin_count <- distinct(group_by(storm_list,  SUBBASIN), SID)
+count(subbasin_count, SUBBASIN, name = "Storm Count")
+```
+
+We find that there are 3 main sub basins which are CS (Caribbean Sea),  GM (Gulf of Mexico), and finally NA (North Atlantic). Much like we did before, let's plot these on a bar graph to clarify the count distinctions between the sub basins.
+
+```{r}
+ggplot(subset(subbasin_count, !is.na(SUBBASIN))) + 
+  geom_bar(aes(x=SUBBASIN), color="darkblue", fill="lightblue") +
+  ggtitle("Storms in Sub basins")
+```
+Here we find that the most affected sub basin is  NA (North Atlantic). 
+
+
+## 4.International Standard of Time: ISO_TIME
+
+Next we will be exploring the  ISO_TIME column, which will be significantly easier as we just need to verify that the dates are in the right format. The format of interest here is
+YYYY-MM-DD HH:mm:ss. To do this we are going to look at the first 5 and last 5 entries in our data table. 
+
+```{r}
+head(select(storm_list, ISO_TIME), 5)
+tail(select(storm_list, ISO_TIME), 5)
+```
+
+Here we find that they are all in the right format. 
+
+## 5.Nature: NATURE
+
+Now looking at the NATURE column, let's find the different combined storm types present in this data set along with their frequencies.
+
+```{r}
+storm_types <- distinct(group_by(storm_list, NATURE), SID)
+count(storm_types, NATURE, name = "Storm Count")
+```
+The data here shows that we have 6 different types of storms: DS (Disturbance), ET (Extratropical), MX  (Mixture), NR (Not reported), SS (Subtropical), and TS (Tropical) as our storm types.These are all sub types of tropical storms, so no filtering needs to be done. Knowing this, we can then plot each type of storm in a bar plot in order to visualize their frequencies.
+
+```{r}
+ggplot(storm_types) + 
+  geom_bar(aes(x = NATURE),color="darkblue", fill="lightblue") +
+  ggtitle("Storms Types") 
+```
+After looking the the bar plot, it is seemingly clear that the most common type of storm is TS (Tropical).
+
+## 6.Latitude and Longitude: LAT and LON
+
+In order to analyze the data for latitude and longitude, it is easiest to look for whether or not data from these columns is localized to a certain area. Here the area of interest is the basin of the North Atlantic along with those storms that formed there and moved to the Eastern North Pacific basin. To do that, we can plot the coordinates on a map to get a visual of area that is most affected by these storms. 
+
+```{r}
+world_map <- map_data("world")
+lat_lon_map <- ggplot() + 
+  geom_polygon(data = world_map, 
+               aes(x = long, y = lat, group=group), 
+               fill = "gray100", colour = "gray60", size = 0.1)+ 
+  geom_point(data = storm_list, aes(x=LON, y=LAT, color=BASIN), alpha=0.08) +  xlim(c(-120, 10)) + ylim(c(0, 80)) + ggtitle("Storms Map") 
+
+lat_lon_map
+```
+After plotting the map, we can see that the latitude and longitude measurements of the storm do indeed cluster around the Northern Atlantic basin. 
+
+## 7.Wind Speed: WMO_WIND
+
+One way we can look at the Wind speed is through a density plot since it can give us insight on the distribution shape and important summary statistics.
+
+```{r}
+ggplot(storm_list) +
+  geom_density(aes(x=WMO_WIND), color="darkblue", fill="lightblue") +
+  ggtitle("Wind Speed of Storm Types") 
+```
+Here we can see that there is an approximate average around 50 knots. The graph is also skewed to the right indicating that there may be large outliers in the data. Another important step in this analysis that could be insightful is taking a look at the summary statistics from this column eg. median, max, mean since they can help quantify measurements we saw in the plot.
+
+```{r}
+windspeed_stats <- na.omit(storm_list$WMO_WIND)
+summary(windspeed_stats)
+```
+  
+## 8.Wind Pressure: WMO_PRES
+
+The analysis for wind pressure can also be depicted through a density plot:
+
+```{r}
+ggplot(storm_list) +
+  geom_density(aes(x=WMO_PRES), color="darkblue", fill="lightblue") +
+  ggtitle("Wind Pressure of Storm Types") 
+```
+The plot here is skewed to the left which is a startling difference from the plot we got for WMO_WIND. The median is approximately 1000 mb. Here again we look to the summary statistics to have a more holistic idea of the important measurements that make up the wind pressure column.
+
+```{r}
+windpressure_stats <- na.omit(storm_list$WMO_PRES)
+summary(windpressure_stats)
+```
+
+## 9.Distance to Land: DIST2LAND
+
+The analysis for distance to land can also be depicted through a density plot, but to vary our visual depictions of the data we can opt for a histogram here given that both give us valuable insight on the distribution of the data. One other thing to mention here is that the unit for this column is in kilometers:
+
+```{r}
+ggplot(storm_list) +
+  geom_histogram(aes(x=DIST2LAND, y=..density..), color="darkblue", fill="lightblue") +
+  ggtitle("Distance to land from the current position")
+```
+Here we see that the majority of storms stay relatively close to land given that the land data set includes all continents and any islands larger than 1400 km^2 and is the nearest at the present time in any direction. Much like we did for wind speed and pressure, we can take a look at the important summary statistics as well to gauge the important metrics. 
+
+```{r}
+summary(storm_list$DIST2LAND)
+```
+
+## 10.Landfall: LANDFALL
+
+Finally in our analysis for Landfall, we are again going to create a histogram and look at the important summary statistics.
+
+```{r}
+ggplot(storm_list) +
+  geom_histogram(aes(x=LANDFALL, y=..density..), color="darkblue", fill="lightblue") +
+  ggtitle("Nearest location to land within next 6 hours")
+```
+Here we see that the plot for Landfall looks very similar to that for DIST2LAND indicating that the summary statistics will also be quite similar. 
+
+```{r}
+summary(na.omit(storm_list$LANDFALL))
+```
+
+
+With the analysis for each of our columns now done, we can move on to main portion of the report in which we analyze claims for our given data set using summary tables, statistical charts, and of course maps.
+
+# Main Analysis
+
+In this section, we are going to come up with both numeric and visual outputs in an attempt to analyze two main claims.
+
+## First Claim: 
+
+### C.1) Are hurricanes becoming more frequent?
+
+More specifically: In the analyzed period (from 1970 to 2019), are hurricanes becoming more frequent (year over year generally speaking)?
+
+To assess this claim we need to focus on three parts: 
+
+1. What constitutes a hurricane? Do we need to filter the data?
+2. What is our time interval of interest? 
+3. How can we visualize the variation in the data?
+
+Verdict: Agree
+
+Starting with the first point of interest, we know that storms becomes hurricanes only when their wind speeds are more than or equal to 64 knots;therefore, we first need to filter our storms data to only include hurricanes. 
+
+```{r}
+hurricanes <- filter(storm_list, WMO_WIND >= 64) %>%
+  select(SEASON,NAME, SID)
+head(hurricanes, 10)
+```
+Now that we filtered the data to only include hurricanes, we can go ahead and focus on the frequency of each hurricane in our given time interval, which is 1970 to 2019.To do this we can create a table with the frequency of hurricanes every season.
+
+```{r}
+ditinct_years <- distinct(group_by(hurricanes, SEASON), SID)
+year_count_data <- count(ditinct_years, SEASON, name = "Hurricane Count")
+head(year_count_data,10)
+```
+
+Finally, a method of visualization we can use here is a bar chart that shows us the frequency of hurricanes every season:
+
+```{r}
+hurricanes_in_time <- select(distinct(hurricanes, SID, SEASON), SEASON)
+ggplot(hurricanes_in_time)+
+  geom_bar(aes(x=factor(SEASON)), color="darkblue", fill="lightblue")  +
+  scale_x_discrete(guide = guide_axis(n.dodge=3)) + 
+  labs(title="Frequency of Hurricanes per SEASON", x = "Year", y = "Hurricane Count")
+```
+Based on this plot, we can see that there seem to be slight increases in the frequencies generally with a noticeable maximum of 15 hurricanes occurring in 2015. This increase in frequency may be correlated with the rise in North Atlantic sea surface temperatures.
+
+To be sure though let us calculate the sum of hurricane occurrences before and including 1995 (a rough midpoint between our period of interest) and the sum of those that occur after 1995. We can then also calculate the percentage of hurricanes that that occurred after 1995 over those that occurred before 1995. 
+
+```{r}
+storms_before1995 <- sum(year_count_data[year_count_data$SEASON <= 1995,2]) 
+storms_before1995 
+storms_after1995 <- sum(year_count_data[year_count_data$SEASON > 1995,2]) 
+storms_after1995 
+
+(storms_after1995/ storms_before1995) *100
+                 
+```             
+We find that the percentage is 131.3869 % indicating that the frequency has increased over time. Furthermore, the sum of hurricanes that occurred after 1995 is slightly larger than those that occurred before.
+
+Inference: Based on these plots and calculations, we can conclude that Claim A is true.
+
+## Second Claim: 
+
+### C.2) Are hurricanes getting stronger?
+
+More specifically: In the analyzed period (from 1970 to 2019), are hurricanes getting stronger (year over year generally speaking)?
+
+To assess this claim we need to focus on three parts: 
+
+1. How can we assess hurricane strength?
+2. What is our time interval of interest? 
+3. How can we visualize the variation in the data?
+
+
+Verdict: Disagree
+
+Let's start working on this claim. A hurricane’s strength is measured by its wind speed, so let's start by filtering our data to include only hurricanes much like in the last section. Once we filter, we should include the wind speed associated with every hurricane.
+
+```{r}
+hurricane_strength <- filter(storm_list, WMO_WIND >= 64) %>%
+  select(SID,WMO_WIND, SEASON)
+head(hurricane_strength,10)
+```
+This table gives us every unique WMO_WIND value for a given storm. In order to investigate the claim on whether or not they are getting stronger, we need to create a table that calculates the average wind speed per year. That way we can then plot to see if the strength of hurricane is increasing over time. We also need to filter out all the N/A values for WMO_WIND.
+
+```{r}
+hurricane_strength <- hurricane_strength %>% 
+  group_by(SEASON) %>% 
+  summarize(avg_wind = mean(WMO_WIND, na.rm = TRUE)) 
+hurricane_strength
+```
+Now that the data is sorted, we can graph a timeline of the average wind speed by year. That is: years in the x-axis, average wind-speed in the y-axis, timeline connecting the dots for average wind speed in each year.
+
+Note: I considered making a box plot here, but there are too many years to plot.
+
+```{r}
+ggplot(data = hurricane_strength,aes(x = SEASON, y = avg_wind))+
+  geom_point() +
+  geom_line()
+```
+
+Based on this plot, it does not seem as though hurricanes are generally getting stronger. There are a lot of years in which the average wind speed has been consistent or less than the averages from previous years. There are some exceptions to that; however, they do not seem significant enough to support the claim. 
+
+Much like before though, let us calculate the sum of the average wind speed before and including 1995 (a rough midpoint between our period of interest) and the sum of those that occur after 1995. We can then also calculate the percentage of storm strength after 1995 over that of the hurricanes that occurred before 1995.
+
+```{r}
+
+storms_before1995_strength <- sum(hurricane_strength[hurricane_strength$SEASON <= 1995,2]) 
+storms_before1995_strength 
+storms_after1995_strength  <- sum(hurricane_strength[hurricane_strength$SEASON > 1995,2]) 
+storms_after1995_strength 
+
+(storms_after1995_strength / storms_before1995_strength ) *100
+                 
+```        
+
+We find that the percentage is 97.96598 % indicating that the average speed has not necessarily increased over time. 
+
+Inference: Based on these plots and calculations, we can conclude that Claim B is not true.
+
+# Further Analysis:
+
+In this section, each claim will assessed with R code that provides output directly answering the claim (either confirming or denying the claim). In addition to the R code,  a sound description and interpretation will be provided.
+
+### C.3) 2019 Atlantic Hurricane Season
+
+a) The 2019 atlantic hurricane season had 20 tropical cyclones, of which 18 were named
+storms.
+
+First we want to assess whether or not the 2019 atlantic hurricane season had 20 tropical cyclones. To do this, we can create a table filtered by year in order to get the count of storms that occurred in 2019. 
+
+```{r}
+storms_2019 <- select(storm_list, SEASON, NAME, WMO_WIND, SID) %>% 
+  filter(SEASON == "2019")
+
+number_storms_2019 <- select(storms_2019, SEASON, NAME, SID) %>% distinct(SEASON, SID) %>% count(SEASON, name="Storm Count")
+
+number_storms_2019
+```
+Here we find that it is indeed 20, so we can move on to checking whether or not 18 of the tropical cyclones were named. In order for a storm to be named, it must reach a wind speed of 39 mph  or 34 knots, so here we filter the data to only include unique storms with wind speeds greater than 34 knots. 
+
+```{r}
+namedstorms <- select(storm_list, SEASON, NAME, WMO_WIND, SID) %>% 
+  filter(NAME != "NOT_NAMED") %>% 
+  filter(SEASON == "2019") %>% 
+  filter(WMO_WIND >= 34)
+
+number_named_storms <- select(namedstorms, SEASON, SID) %>% distinct(SEASON,SID) %>% count(SEASON, name="Named Storms")
+
+number_named_storms
+```
+We find that the number of named storms is 18. 
+
+Inference: Based on these calculations, we can conclude that claim a is true.
+
+b) The 2019 atlantic hurricane season had six named storms that achieved hurricane status.
+
+In order for storms to acheive hurricane status, their wind speed must be greater than or equal to 74 mph or  64 knots. Therefore, here we will filter the data to only include storms that become hurricanes. Here we are also careful to use the namedstorms dataset we created for part a since we only care about the storms that are named.
+
+```{r}
+hurricanes_2019 <- filter(namedstorms, WMO_WIND >= 64)
+number_hurricanes <- count(distinct(hurricanes_2019,SEASON, SID), SEASON, name="Hurricanes")
+number_hurricanes
+```
+We find that in the 2019 atlantic hurricane season  seven and not six named storms achieved hurricane status.
+
+Inference: Based on these calculations, we can conclude that claim b is not true.
+
+
+c) The 2019 atlantic hurricane season had three named storms that intensified into major hurricanes, all of which became Category 5 hurricanes.
+
+In order for storms to acheive major hurricane status, their wind speed must be greater than or equal to 111 mph or 96 knots. Therefore, here we will filter the data to only include major hurricanes. Here we are also careful to use the namedstorms dataset we created for part a since we only care about the storms that are named.
+
+```{r}
+majorhurricanes <- filter(namedstorms, WMO_WIND >= 96) %>% 
+  distinct(SEASON, NAME) %>%
+  count(SEASON, name = "MajorHurricanes")
+majorhurricanes
+```
+We find that there are indeed 3 major hurricanes, so we can move on to investigating whether or not they turn into category 5 hurricanes. In order for them to achieve that status their wind speed must be greater than or equal to 157 mph or 136 knots, so we filter our data to only include those hurricanes. 
+
+```{r}
+majorhurricanes <- filter(namedstorms, WMO_WIND >= 136) %>% 
+  distinct(SEASON, NAME) %>%
+  count(SEASON, name = "MajorHurricanes")
+majorhurricanes
+```
+We find that in the 2019 atlantic hurricane season though there were 3 major hurricanes 2 of the 3 turned out to be category 5 hurricanes.
+
+Inference: Based on these calculations, we can conclude that claim c is not true.
+
+d) There was one storm in 2019 that formed outside the official hurricane season (recall that the official season goes from June 1 to November 30).
+
+To investigate this claim, we will count the number of unique storms that occur in a given month in 2019. 
+
+```{r}
+storms_per_month <- filter(storm_list, SEASON == "2019") %>%
+  select(MONTH, SEASON, SID)%>% 
+  distinct(SID, MONTH)%>%
+  count(MONTH, name = "Storm Count")
+storms_per_month
+```
+
+We find that in the 2019 atlantic hurricane season there was only one storm that formed outside the official hurricane season, which occurred in May.
+
+Inference: Based on these calculations, we can conclude that claim d is true.
+
+e) Two storms became Category 5 hurricanes, at least one storm making landfall at Category 5 intensity.
+
+As we found while investigating claim c, 2 of the 3 major hurricanes turned out to be category 5 hurricanes. In order to assess whether or not at least one of them made landfall at Category 5 intensity, we need to filter the LANDFALL variable to be equal to 0.
+
+```{r}
+hurricanelandfall <- filter(storm_list, WMO_WIND >= 136 & SEASON == 2019) %>% select(SID, SEASON,WMO_WIND, MONTH, LANDFALL)
+positivelandfall <- filter(hurricanelandfall, LANDFALL == 0 )
+positivelandfall
+```
+
+After filtering we find an empty table indicating that in the 2019 atlantic hurricane season none of the storms made landfall at Category 5 intensity.
+
+Inference: Based on these calculations, we can conclude that claim e is not true.
+
+# Animated Map:
+
+In this section, we are going to be making an animated map of storms in 2019, to display their paths (or trajectories). This map plots the locations of the storms with their longitude and latitude values. 
+
+```{r, warning = FALSE}
+
+
+storms_2019 <- filter(storm_list, SEASON == 2019)
+
+gg_world <- ggplot() + 
+  geom_polygon(data = world_map, 
+               aes(x = long, y = lat, group=group), 
+               fill = "gray95", colour = "gray70", size = 0.2) +
+  theme_bw()
+
+animates_storms <- gg_world +
+  geom_point(data = storms_2019 , aes(x=LON, y=LAT, color= NAME, size = WMO_WIND), alpha=0.5) +
+    xlim(c(-150, 0)) + ylim(c(0, 90)) + ggtitle("Storms Map") + labs(title="Animated map of storms in 2019", x = "Longitude", y = "Latitude")
+  
+anim <- animates_storms +
+  transition_time(ISO_TIME)
+
+anim
+```
+
+# Conclusion:
+
+In conclusion, according to the exploratory data analysis conducted keeping in mind the motivation of the project, we found that in the main analysis:
+
+1. Claim A is true
+2. Claim B is not true
+
+As for the further analysis, we found that:
+
+  Claim a is True
+  Claim b is Not True
+  Claim c is Not True
+  Claim d is True
+
